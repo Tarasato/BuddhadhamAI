@@ -206,16 +206,18 @@ try:
         top_k = len(query) if top_k is None else top_k
         if top_k > 10:
             top_k = 10
-        log(f"Asking question: {query}")
-        if is_about_buddhism_db(query) == False:
-            end = time.perf_counter()
-            processing_time = format_duration(end - start)
-            return {
-                "answer": "ขออภัยครับ ผมไม่สามารถตอบคำถามนี้ได้ เนื่องจากผมถูกออกแบบมาเพื่อตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น",
-                "duration": f'ใช้เวลา {processing_time}'
-            }
-        else: 
-            results = search(query, index, metadata, top_k, max_distance=max_distance)
+        # log(f"Asking question: {query}")
+        # if is_about_buddhism_db(query) == False:
+        #     end = time.perf_counter()
+        #     processing_time = format_duration(end - start)
+        #     return {
+        #         "answer": "ขออภัยครับ ผมไม่สามารถตอบคำถามนี้ได้ เนื่องจากผมถูกออกแบบมาเพื่อตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น",
+        #         "duration": f'ใช้เวลา {processing_time}'
+        #     }
+        # else: 
+        #     results = search(query, index, metadata, top_k, max_distance=max_distance)
+            
+        results = search(query, index, metadata, top_k, max_distance)
 
         contexts = [r["doc"]["content"] for r in results]
         
@@ -231,6 +233,7 @@ try:
             ]
         )
         raw_answer = response['message']['content']
+        log(f"Raw answer from model: {raw_answer}")
         answer = filter_buddhism_response(raw_answer)
         ref_text = short_references([r["doc"] for r in results])
         end = time.perf_counter()
