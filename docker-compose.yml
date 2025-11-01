@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   buddham_ai:
     image: buddham_ai:latest
@@ -7,3 +6,6 @@ services:
       - .env
     ports:
       - "8000:8000"
+    runtime: nvidia               # เพิ่มให้ container ใช้ GPU
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
