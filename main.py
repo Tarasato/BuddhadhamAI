@@ -79,7 +79,7 @@ class TaskManager:
         payload = {
             "taskId": taskId,
             "chatId": chatId,
-            "qNaWords": f"{data_obj['data'].get('answer', '')}\n\nอ้างอิงข้อมูลจาก {data_obj['data'].get('references', '')}\n\nใช้เวลา {data_obj['data'].get('duration', '')}"
+            "qNaWords": f"{data_obj['data'].get('answer', '')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
         }
         try:
             async with aiohttp.ClientSession() as session:
@@ -121,31 +121,52 @@ class TaskManager:
                 except Exception:
                     data_obj = {"answer": out}
 
-                self.results[taskId] = {"status": "done", "data": data_obj, "args": args, "chatId": chatId}
-                self.status[taskId] = "done"
-                message = f"{data_obj['data'].get('answer', '')}\n\nอ้างอิงข้อมูลจาก {data_obj['data'].get('references', '')}\n\nใช้เวลา {data_obj['data'].get('duration', '')}"
-                payload = {
-                    "taskId": taskId,
-                    "message": message
-                }
-                socket_emit("task", payload)
-                if os.getenv("DEBUG").lower() == "true":
-                    socket_emit("debug", f"Test Task {taskId}")
-                log(f"[TaskManager] Task {taskId} done")
+                if {data_obj['data'].get('answer', '')}:
+                    self.results[taskId] = {"status": "done", "data": data_obj, "args": args, "chatId": chatId}
+                    self.status[taskId] = "done"
+                    message = f"{data_obj['data'].get('answer', '')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+                    payload = {
+                        "taskId": taskId,
+                        "message": message
+                    }
+                    socket_emit("task", payload)
+                    if os.getenv("DEBUG").lower() == "true":
+                        socket_emit("debug", f"Test Task {taskId}")
+                    log(f"[TaskManager] Task {taskId} done")
 
-                # send to /qNa/answer
-                if chatId:
-                    await self.saveAnswer(taskId, chatId, data_obj)
+                    # send to /qNa/answer
+                    if chatId:
+                        await self.saveAnswer(taskId, chatId, data_obj)
+                else:
+                    self.results[taskId] = {"status": "error", "error": data_obj['data'].get('Error', ''), "args": args, "chatId": chatId}
+                    self.status[taskId] = "error"
+                    message = f"{data_obj['data'].get('Error', '')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+                    payload = {
+                        "taskId": taskId,
+                        "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
+                    }
+                    socket_emit("task", payload)
+                    log(f"[TaskManager] Task {taskId} error: {data_obj['data'].get('Error', '')}")
             else:
                 self.results[taskId] = {"status": "error", "error": err, "args": args, "chatId": chatId}
                 self.status[taskId] = "error"
-                socket_emit("debug", f"Test Task {taskId}")
+                message = f"{data_obj['data'].get('Error', '')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+                payload = {
+                    "taskId": taskId,
+                    "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
+                }
+                socket_emit("task", payload)
                 log(f"[TaskManager] Task {taskId} error: {err}")
 
         except Exception as e:
             self.results[taskId] = {"status": "error", "error": str(e), "args": args, "chatId": chatId}
             self.status[taskId] = "error"
-            socket_emit("debug", f"Test Task {taskId}")
+            message = f"{data_obj['data'].get('Error', '')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+            payload = {
+                "taskId": taskId,
+                "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
+            }
+            socket_emit("task", payload)
             log(f"[TaskManager] Task {taskId} exception: {e}")
 
         finally:

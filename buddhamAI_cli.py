@@ -10,6 +10,8 @@ import numpy as np
 import faiss
 import ollama
 import hashlib
+from debugger import conn_str
+from sqlalchemy import create_engine, text
 from reDocuments import ensure_embeddings_up_to_date
 from debugger import format_duration, log
 
@@ -32,6 +34,7 @@ try:
     end = None
     STATUS_FILE = "embed_status.json"
     debug_mode = os.getenv("DEBUG", "false").lower()
+    engine = create_engine(conn_str, fast_executemany=True)
 
     def get_installed_models():
         # try --json
@@ -154,6 +157,29 @@ try:
             f"{d['bookName']} - {d['chapterName']}"
             for d in sorted_docs
         ])
+        
+    def is_about_buddhism_db(text_to_check) -> bool:
+        """
+        ตรวจสอบข้อความ text ว่ามีเนื้อหาเกี่ยวกับพระพุทธธรรมใน chapter_tb หรือไม่
+        join กับ book_tb เพื่อเอาชื่อหนังสือ
+        return: True ถ้าเกี่ยวข้อง, False ถ้าไม่เกี่ยวข้อง
+        """
+        with engine.connect() as conn:
+            query = text("""
+            SELECT COUNT(*) AS cnt
+            FROM chapter_tb c
+            INNER JOIN book_tb b ON c.bookId = b.bookId
+            WHERE c.chapterText LIKE :text OR b.bookName LIKE :text
+            """)
+            result = conn.execute(query, {"text": f"%{text_to_check}%"})
+            count = result.scalar()
+            return count > 0
+        
+    def filter_buddhism_response(response_text) -> str:
+        if is_about_buddhism_db(response_text):
+            return response_text
+        else:
+            return "ขออภัยครับ ผมไม่สามารถตอบคำถามนี้ได้ เนื่องจากผมถูกออกแบบมาเพื่อตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น"
 
     def check_rejection_message(text: str) -> bool:
         rejection_phrases = [
@@ -175,11 +201,21 @@ try:
         return any(phrase in text for phrase in greeting_phrases)
 
     def ask(query, index, metadata, top_k=None, max_distance=None):
+        global start
+        start = time.perf_counter()
         top_k = len(query) if top_k is None else top_k
         if top_k > 10:
             top_k = 10
-        global start
-        results = search(query, index, metadata, top_k, max_distance=max_distance)
+        log(f"Asking question: {query}")
+        if is_about_buddhism_db(query) == False:
+            end = time.perf_counter()
+            processing_time = format_duration(end - start)
+            return {
+                "answer": "ขออภัยครับ ผมไม่สามารถตอบคำถามนี้ได้ เนื่องจากผมถูกออกแบบมาเพื่อตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น",
+                "duration": f'ใช้เวลา {processing_time}'
+            }
+        else: 
+            results = search(query, index, metadata, top_k, max_distance=max_distance)
 
         contexts = [r["doc"]["content"] for r in results]
         
@@ -187,7 +223,6 @@ try:
         prompt = f"""ข้อมูลอ้างอิง:\n{full_context}\nคำถาม: {query}"""
         model = 'gpt-oss:20b'
         log(f"Asking model: \"{model}\" with prompt:\n{prompt}")
-        start = time.perf_counter()
         response = ollama.chat(
             model=model,
             messages=[
@@ -195,20 +230,22 @@ try:
                 {"role": "user", "content": prompt}
             ]
         )
-        answer = response['message']['content']
+        raw_answer = response['message']['content']
+        answer = filter_buddhism_response(raw_answer)
         ref_text = short_references([r["doc"] for r in results])
         end = time.perf_counter()
         processing_time = format_duration(end - start)
         log(f"Asked \"{model}\" finished in {processing_time}")
-        if not check_rejection_message(answer) and not check_greeting_message(answer):
+        if check_rejection_message(answer) or check_greeting_message(answer):
             return {
                 "answer": answer,
-                "references": f"อ้างอิงข้อมูลจาก {ref_text}",
                 "duration": f'ใช้เวลา {processing_time}'
             }
         else:
             return {
-                "answer": answer
+                "answer": answer,
+                "references": f"อ้างอิงข้อมูลจาก {ref_text}",
+                "duration": f'ใช้เวลา {processing_time}'
             }
     
     def read_last_embed_time():
@@ -255,40 +292,50 @@ try:
 
 
     def ask_cli(argv=None):
-        log("Starting BuddhamAI")
-        if debug_mode == "false":
-            check_and_pull_models(required_models)
+        try:
+            log("Starting BuddhamAI")
+            if debug_mode == "false":
+                check_and_pull_models(required_models)
 
-        if argv is None:  # if not provided → use sys.argv
-            argv = sys.argv[1:]
+            if argv is None:  # if not provided → use sys.argv
+                argv = sys.argv[1:]
 
-        message, top_k, max_distance = parse_args(argv)
+            message, top_k, max_distance = parse_args(argv)
 
-        if message is None or message.strip() == "":
-                result = {"answer": "กรุณาถามคำถาม", "references": "ไม่มี", "duration": format_duration(0)}
+            if message is None or message.strip() == "":
+                    result = {"answer": "กรุณาถามคำถาม", "references": "ไม่มี", "duration": format_duration(0)}
+                    data = {"data": result}
+                    json_str = json.dumps(data, ensure_ascii=False)
+                    log(json_str)
+                    print(json_str)
+                    return data  # return to main.py
+
+            index, metadata = init_bot()
+            if debug_mode == "true":
+                time.sleep(float(os.getenv("DEBUG_TIME")))
+                result = {"answer": "**ธรรม (Dhamma) คือ สิ่งที่พระพุทธเจ้าสอนเพื่อพ้นทุกข์**  - **ความหมายโดยรวม**: “ธรรม” หมายถึง กฎและหลักธรรมที่พระพุทธเจ้าผูกให้สอนว่าเป็นเส้นทางสู่ความเข้าใจจริงของชีวิตและการดับทุกข์  - **ความสัมพันธ์กับอริยสัจ 4**:    1. **ทุกข์** – ความทุกข์และความไม่สบายใจในชีวิต    2. **สมุทัย** – เหตุของทุกข์ (ความตัณหา, ความอยาก)    3. **นิโรธ** – การดับทุกข์ (สันติความสุขที่ไม่มีความทุกข์)    4. **มรรค** – เส้นทาง (อริยอุปสรรค) ที่นำไปสู่การดับทุกข์  - **วิธีการดำเนินชีวิตตามธรรม**:    * ฝึกสติและปฏิบัติในปัจจุบัน    * เรียนรู้และทำตามมรรค (เส้นทาง 8 ส่วน)    * ลดตัณหาและแสวงหาปัญญาจากความจริงของธรรม  สรุปได้ว่า “ธรรม” คือหลักการและกฎที่สอนให้มนุษย์เข้าใจความเป็นจริงของชีวิตและปกป้องตนเองจากความทุกข์ โดยการปฏิบัติตามอริยสัจ 4 และมรรค.", "argv": message, "references": "test only", "duration": format_duration(0)} # for test only
                 data = {"data": result}
                 json_str = json.dumps(data, ensure_ascii=False)
                 log(json_str)
                 print(json_str)
                 return data  # return to main.py
+            
+            result = ask(message, index, metadata, top_k=top_k, max_distance=max_distance)
 
-        index, metadata = init_bot()
-        if debug_mode == "true":
-            time.sleep(float(os.getenv("DEBUG_TIME")))
-            result = {"answer": "**ธรรม (Dhamma) คือ สิ่งที่พระพุทธเจ้าสอนเพื่อพ้นทุกข์**  - **ความหมายโดยรวม**: “ธรรม” หมายถึง กฎและหลักธรรมที่พระพุทธเจ้าผูกให้สอนว่าเป็นเส้นทางสู่ความเข้าใจจริงของชีวิตและการดับทุกข์  - **ความสัมพันธ์กับอริยสัจ 4**:    1. **ทุกข์** – ความทุกข์และความไม่สบายใจในชีวิต    2. **สมุทัย** – เหตุของทุกข์ (ความตัณหา, ความอยาก)    3. **นิโรธ** – การดับทุกข์ (สันติความสุขที่ไม่มีความทุกข์)    4. **มรรค** – เส้นทาง (อริยอุปสรรค) ที่นำไปสู่การดับทุกข์  - **วิธีการดำเนินชีวิตตามธรรม**:    * ฝึกสติและปฏิบัติในปัจจุบัน    * เรียนรู้และทำตามมรรค (เส้นทาง 8 ส่วน)    * ลดตัณหาและแสวงหาปัญญาจากความจริงของธรรม  สรุปได้ว่า “ธรรม” คือหลักการและกฎที่สอนให้มนุษย์เข้าใจความเป็นจริงของชีวิตและปกป้องตนเองจากความทุกข์ โดยการปฏิบัติตามอริยสัจ 4 และมรรค.", "argv": message, "references": "test only", "duration": format_duration(0)} # for test only
             data = {"data": result}
             json_str = json.dumps(data, ensure_ascii=False)
             log(json_str)
             print(json_str)
             return data  # return to main.py
-        
-        result = ask(message, index, metadata, top_k=top_k, max_distance=max_distance)
-
-        data = {"data": result}
-        json_str = json.dumps(data, ensure_ascii=False)
-        log(json_str)
-        print(json_str)
-        return data  # return to main.py
+        except Exception:
+            err_msg = traceback.format_exc()
+            log("Error: " + err_msg)
+            result = {"Error": f"Error: {err_msg}", "status": 500}
+            data = {"data": result}
+            json_str = json.dumps(data, ensure_ascii=False)
+            log(json_str)
+            print(json_str)
+            return data  # return to main.py
 
     if __name__ == "__main__":
         ask_cli()
@@ -297,15 +344,16 @@ except Exception:
     err_msg = traceback.format_exc()
     try:
         log("Error: " + err_msg)
-        data = {"answer": f"Error: {err_msg}", "status": 500}
+        result = {"Error": f"Error: {err_msg}", "status": 500}
+        data = {"data": result}
         json_str = json.dumps(data, ensure_ascii=False)
         log(json_str)
         print(json_str)
     except:
         log("Error: " + err_msg)
-        data = {"answer": f"Error: {err_msg}", "status": 500}
+        result = {"Error": f"Error: {err_msg}", "status": 500}
+        data = {"data": result}
         json_str = json.dumps(data, ensure_ascii=False)
         log(json_str)
         print(json_str)
-        pass
     sys.exit(1)
