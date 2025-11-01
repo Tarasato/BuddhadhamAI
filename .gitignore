@@ -7,3 +7,4 @@ __pycache__
 documents/documentsPython/__pycache__
 buddhamAI_cli.log
 secrets/*.txt
+buddhamAI_cli_mount.log
