@@ -9,6 +9,7 @@ import aiohttp
 from debugger import log
 import uvicorn
 import json
+import shlex
 
 dotenv.load_dotenv()
 app = FastAPI()
@@ -117,14 +118,15 @@ class TaskManager:
                 self.results[taskId] = {"status": "cancelled", "args": args, "chatId": chatId}
             elif proc.returncode == 0:
                 try:
-                    data_obj = json.loads(out) if out.strip().startswith("{") else {"answer": out}
+                    data_obj = json.loads(out) if out.strip().startswith("{") else {"data": out}
+                    log(f"data_obj: {data_obj}")
                 except Exception:
                     data_obj = {"answer": out}
 
-                if {data_obj['data'].get('answer', '')}:
+                if data_obj['data'].get('answer'):
                     self.results[taskId] = {"status": "done", "data": data_obj, "args": args, "chatId": chatId}
                     self.status[taskId] = "done"
-                    message = f"{data_obj['data'].get('answer', '')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+                    message = f"{data_obj['data'].get('answer')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
                     payload = {
                         "taskId": taskId,
                         "message": message
@@ -140,7 +142,7 @@ class TaskManager:
                 else:
                     self.results[taskId] = {"status": "error", "error": data_obj['data'].get('Error', ''), "args": args, "chatId": chatId}
                     self.status[taskId] = "error"
-                    message = f"{data_obj['data'].get('Error', '')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+                    message = f"{data_obj['data'].get('Error')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
                     payload = {
                         "taskId": taskId,
                         "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
@@ -150,18 +152,16 @@ class TaskManager:
             else:
                 self.results[taskId] = {"status": "error", "error": err, "args": args, "chatId": chatId}
                 self.status[taskId] = "error"
-                message = f"{data_obj['data'].get('Error', '')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+                message = f"{data_obj['data'].get('Error')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
                 payload = {
                     "taskId": taskId,
                     "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
                 }
                 socket_emit("task", payload)
                 log(f"[TaskManager] Task {taskId} error: {err}")
-
         except Exception as e:
             self.results[taskId] = {"status": "error", "error": str(e), "args": args, "chatId": chatId}
             self.status[taskId] = "error"
-            message = f"{data_obj['data'].get('Error', '')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
             payload = {
                 "taskId": taskId,
                 "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
@@ -188,10 +188,13 @@ async def ask(request: Request):
     data = await request.json()
     log(f"[API] /ask received: {data}")
     args = data.get("args", [])
+    split_args = []
+    for a in args:
+        split_args.extend(shlex.split(a))
     chatId = data.get("chatId")
     taskId = str(int(time.time() * 1000))
-    app.task_manager.add_task(taskId, args, chatId)
-    return {"args": args, "taskId": taskId, "status": "queued", "chatId": chatId}
+    app.task_manager.add_task(taskId, split_args, chatId)
+    return {"args": split_args, "taskId": taskId, "status": "queued", "chatId": chatId}
 
 @app.post("/cancel/{taskId}")
 async def cancel(taskId: str):

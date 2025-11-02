@@ -10,8 +10,8 @@ import numpy as np
 import faiss
 import ollama
 import hashlib
-from debugger import conn_str
-from sqlalchemy import create_engine, text
+from numpy.linalg import norm
+from sklearn.metrics.pairwise import cosine_similarity
 from reDocuments import ensure_embeddings_up_to_date
 from debugger import format_duration, log
 
@@ -34,7 +34,9 @@ try:
     end = None
     STATUS_FILE = "embed_status.json"
     debug_mode = os.getenv("DEBUG", "false").lower()
-    engine = create_engine(conn_str, fast_executemany=True)
+    
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.write("")
 
     def get_installed_models():
         # try --json
@@ -157,29 +159,42 @@ try:
             f"{d['bookName']} - {d['chapterName']}"
             for d in sorted_docs
         ])
+
+    def filter_user_query(query: str):
+        # ตรวจสอบว่า EMB_PATH โหลดได้ไหม
+        try:
+            emb_matrix = np.load(EMB_PATH)
+        except Exception as e:
+            log(f"Error loading EMB_PATH: {EMB_PATH}, exception: {e}")
+            return None
+
+        log(f"Loaded emb_matrix shape: {emb_matrix.shape}")
         
-    def is_about_buddhism_db(text_to_check) -> bool:
-        """
-        ตรวจสอบข้อความ text ว่ามีเนื้อหาเกี่ยวกับพระพุทธธรรมใน chapter_tb หรือไม่
-        join กับ book_tb เพื่อเอาชื่อหนังสือ
-        return: True ถ้าเกี่ยวข้อง, False ถ้าไม่เกี่ยวข้อง
-        """
-        with engine.connect() as conn:
-            query = text("""
-            SELECT COUNT(*) AS cnt
-            FROM chapter_tb c
-            INNER JOIN book_tb b ON c.bookId = b.bookId
-            WHERE c.chapterText LIKE :text OR b.bookName LIKE :text
-            """)
-            result = conn.execute(query, {"text": f"%{text_to_check}%"})
-            count = result.scalar()
-            return count > 0
+        # ดึง embedding ของ query
+        query_emb = np.array(
+            ollama.embeddings(model="nomic-embed-text:v1.5", prompt=query)["embedding"]
+        )
+        log(f"query_emb shape: {query_emb.shape}")
+
+        # ตรวจสอบ norm ของ query
+        query_norm = np.linalg.norm(query_emb)
+        log(f"query_emb norm: {query_norm:.6f}")
         
-    def filter_buddhism_response(response_text) -> str:
-        if is_about_buddhism_db(response_text):
-            return response_text
-        else:
-            return "ขออภัยครับ ผมไม่สามารถตอบคำถามนี้ได้ เนื่องจากผมถูกออกแบบมาเพื่อตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น"
+        # ตรวจสอบ norm ของทุก embedding
+        emb_norms = np.linalg.norm(emb_matrix, axis=1)
+        zero_indices = np.where(emb_norms == 0)[0]
+        if query_norm == 0:
+            log("Warning: query embedding is zero vector!")
+        if len(zero_indices) > 0:
+            log(f"Warning: found zero vector(s) in embeddings at indices {zero_indices}")
+        
+        # คำนวณ cosine similarity ด้วย sklearn
+        similarities = cosine_similarity(query_emb.reshape(1, -1), emb_matrix)[0]
+        
+        top_index = np.argmax(similarities)
+        log(f"ค้นหาด้วย '{query}' เจอข้อมูลใกล้สุดที่ index {top_index}, similarity = {similarities[top_index]:.6f}")
+        
+        return similarities[top_index]
 
     def check_rejection_message(text: str) -> bool:
         rejection_phrases = [
@@ -189,6 +204,7 @@ try:
             "กรุณาแจ้งชัดเจน",
             "เพื่อให้ตอบได้ตรงประเด็น",
             "ไม่สามารถตอบ",
+            "ไม่สามารถบอกได้",
             "ไม่เข้าใจว่าคุณต้องการถามอะไร",
             "ระบุคำถามให้ชัดเจน"
         ]
@@ -206,18 +222,16 @@ try:
         top_k = len(query) if top_k is None else top_k
         if top_k > 10:
             top_k = 10
-        # log(f"Asking question: {query}")
-        # if is_about_buddhism_db(query) == False:
-        #     end = time.perf_counter()
-        #     processing_time = format_duration(end - start)
-        #     return {
-        #         "answer": "ขออภัยครับ ผมไม่สามารถตอบคำถามนี้ได้ เนื่องจากผมถูกออกแบบมาเพื่อตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น",
-        #         "duration": f'ใช้เวลา {processing_time}'
-        #     }
-        # else: 
-        #     results = search(query, index, metadata, top_k, max_distance=max_distance)
-            
-        results = search(query, index, metadata, top_k, max_distance)
+
+        if filter_user_query(query) < 0.4:
+            end = time.perf_counter()
+            processing_time = format_duration(end - start)
+            return {
+                "answer": "ขออภัยครับ...ผมไม่สามารถตอบคำถามนี้ได้....เนื่องจากผมถูกออกแบบมาเพื่อให้ตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น",
+                "duration": f'ใช้เวลา {processing_time}'
+            }
+        else :
+            results = search(query, index, metadata, top_k, max_distance)
 
         contexts = [r["doc"]["content"] for r in results]
         
@@ -228,13 +242,18 @@ try:
         response = ollama.chat(
             model=model,
             messages=[
-                {"role": "system", "content": "คุณคือผู้ช่วยที่ใช้ข้อมูลอ้างอิงจากเอกสารหลายแหล่ง ซึ่งจะช่วยตอบคำถามเกี่ยวกับพระพุทธรรมเท่านั้นโดยเช็คจากคำถามก่อนซึ่งจะระบุในบรรทัดสุดท้ายถ้าได้รับคำถามนอกเหนือจากพระพุทธรรมให้ตอบว่า ขออภัยครับ...ผมไม่สามารถตอบคำถามนี้ได้....เนื่องจากผมถูกออกแบบมาเพื่อให้ตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น"},
+                {"role": "system", "content": "คุณคือผู้ช่วยที่ใช้ข้อมูลอ้างอิงจากเอกสารหลายแหล่ง ซึ่งจะช่วยตอบคำถามเกี่ยวกับพระพุทธรรมและจะตอบด้วยภาษาไทยเท่านั้นโดยเช็คจากคำถามก่อนซึ่งจะระบุในบรรทัดสุดท้ายถ้าได้รับคำถามนอกเหนือจากพระพุทธรรมให้ตอบว่า ขออภัยครับ...ผมไม่สามารถตอบคำถามนี้ได้....เนื่องจากผมถูกออกแบบมาเพื่อให้ตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น"},
                 {"role": "user", "content": prompt}
             ]
         )
-        raw_answer = response['message']['content']
-        log(f"Raw answer from model: {raw_answer}")
-        answer = filter_buddhism_response(raw_answer)
+        answer = response['message']['content']
+        if filter_user_query(answer) < 0.7:
+            end = time.perf_counter()
+            processing_time = format_duration(end - start)
+            return {
+                "answer": "ขออภัยครับ...ผมไม่สามารถตอบคำถามนี้ได้....เนื่องจากผมถูกออกแบบมาเพื่อให้ตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น",
+                "duration": f'ใช้เวลา {processing_time}'
+            }
         ref_text = short_references([r["doc"] for r in results])
         end = time.perf_counter()
         processing_time = format_duration(end - start)
@@ -247,7 +266,7 @@ try:
         else:
             return {
                 "answer": answer,
-                "references": f"อ้างอิงข้อมูลจาก {ref_text}",
+                "references": f"อ้างอิงข้อมูลจาก\n {ref_text}",
                 "duration": f'ใช้เวลา {processing_time}'
             }
     
@@ -296,14 +315,15 @@ try:
 
     def ask_cli(argv=None):
         try:
-            log("Starting BuddhamAI")
+            log(f"Starting BuddhamAI with argv: {argv}")
             if debug_mode == "false":
                 check_and_pull_models(required_models)
 
             if argv is None:  # if not provided → use sys.argv
                 argv = sys.argv[1:]
-
-            message, top_k, max_distance = parse_args(argv)
+                message, top_k, max_distance = parse_args(argv)
+                
+            log(f"Parsed arguments - message: {message}, top_k: {top_k}, max_distance: {max_distance}")
 
             if message is None or message.strip() == "":
                     result = {"answer": "กรุณาถามคำถาม", "references": "ไม่มี", "duration": format_duration(0)}

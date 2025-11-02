@@ -37,7 +37,7 @@ def create_and_save_embeddings_and_metadata(docs):
             continue
 
         # แบ่งเป็น chunks
-        chunks = chunk_text(content, max_length=1000)  # ปรับตามโมเดล
+        chunks = chunk_text(content, max_length=8192)  # ปรับตามโมเดล
         chunk_embeddings = []
         for chunk in chunks:
             emb = ollama.embeddings(model='nomic-embed-text:v1.5', prompt=chunk)['embedding']
