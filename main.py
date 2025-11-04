@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import subprocess
+import traceback
 from fastapi import FastAPI, Request
 import socketio
 import dotenv
@@ -150,21 +151,31 @@ class TaskManager:
                     socket_emit("task", payload)
                     log(f"[TaskManager] Task {taskId} error: {data_obj['data'].get('Error', '')}")
             else:
+                data_obj = json.loads(out) if out.strip().startswith("{") else {"data": out}
                 self.results[taskId] = {"status": "error", "error": err, "args": args, "chatId": chatId}
                 self.status[taskId] = "error"
-                message = f"{data_obj['data'].get('Error')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+                if isinstance(data_obj, dict) and isinstance(data_obj.get('data'), dict):
+                    message = f"{data_obj['data'].get('Error')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+                else:
+                    message = str(data_obj)
+                    
                 payload = {
                     "taskId": taskId,
-                    "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
+                    "message": message
                 }
                 socket_emit("task", payload)
                 log(f"[TaskManager] Task {taskId} error: {err}")
         except Exception as e:
+            e = traceback.format_exc()
             self.results[taskId] = {"status": "error", "error": str(e), "args": args, "chatId": chatId}
             self.status[taskId] = "error"
+            if isinstance(data_obj, dict) and isinstance(data_obj.get('data'), dict):
+                message = f"{data_obj['data'].get('Error')}\n\n {data_obj['data'].get('references', '')}\n\n {data_obj['data'].get('duration', '')}"
+            else:
+                message = str(data_obj)
             payload = {
                 "taskId": taskId,
-                "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
+                "message": message
             }
             socket_emit("task", payload)
             log(f"[TaskManager] Task {taskId} exception: {e}")
