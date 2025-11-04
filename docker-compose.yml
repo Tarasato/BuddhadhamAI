@@ -6,3 +6,6 @@ services:
       - .env
     ports:
       - "8000:8000"
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
