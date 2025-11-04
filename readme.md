@@ -21,6 +21,20 @@ DEBUG = false
 DEBUG_TIME = 5
 ```
 
+```
+to ai
+{
+    "args": ["ทุกข์", "-k 7", "-d 8"]
+}
+
+to api
+{
+    "question": "มรรค",
+    "-k": 7,
+    "-d": 100
+}
+```
+
 sqlcmd -S <ServerIP> -U <Username> -P <Password>
   
 output   = "../generated/prisma" If you have ยพรหทฟ problems, remove this from schema.prisma
