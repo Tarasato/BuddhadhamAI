@@ -151,6 +151,7 @@ class TaskManager:
                     socket_emit("task", payload)
                     log(f"[TaskManager] Task {taskId} error: {data_obj['data'].get('Error', '')}")
             else:
+                out, err = await asyncio.get_event_loop().run_in_executor(None, proc.communicate)
                 data_obj = json.loads(out) if out.strip().startswith("{") else {"data": out}
                 self.results[taskId] = {"status": "error", "error": err, "args": args, "chatId": chatId}
                 self.status[taskId] = "error"
@@ -166,6 +167,8 @@ class TaskManager:
                 socket_emit("task", payload)
                 log(f"[TaskManager] Task {taskId} error: {err}")
         except Exception as e:
+            out, err = await asyncio.get_event_loop().run_in_executor(None, proc.communicate)
+            data_obj = json.loads(out) if out.strip().startswith("{") else {"data": out}
             e = traceback.format_exc()
             self.results[taskId] = {"status": "error", "error": str(e), "args": args, "chatId": chatId}
             self.status[taskId] = "error"
