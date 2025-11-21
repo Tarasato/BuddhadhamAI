@@ -38,7 +38,7 @@ try:
             os.system('clear')
     
     log_file = "buddhamAI_cli.log"
-    required_models = [read_secret("AI_MODEL", "gpt-oss:20b"), read_secret("AI_EMBEDDING_MODEL", "nomic-embed-text:v1.5")]
+    required_models = [read_secret("AI_MODEL"), read_secret("AI_EMBEDDING_MODEL")]
     EMB_PATH = "embeddings.npy"
     META_PATH = "metadata.pkl"
     DOCS_ALL_PATH = "documents/documentsPkl/documents_all.pkl"
@@ -88,6 +88,7 @@ try:
                     log(f"✅ Finished installing {model}")
             else:
                 log("✅ All models are present")
+                log(f"used models: {models_to_check}")
         except Exception:
             log("❌ Error:\n" + traceback.format_exc())
             exit(1)
@@ -117,7 +118,7 @@ try:
         log(f"Searching for references for: {query} with top_k={top_k} and max_distance={max_distance}")
 
         # Create embedding for query
-        q_emb = np.array([ollama.embeddings(model='nomic-embed-text:v1.5', prompt=query)['embedding']], dtype='float32')
+        q_emb = np.array([ollama.embeddings(model=read_secret("AI_EMBEDDING_MODEL"), prompt=query)['embedding']], dtype='float32')
 
         # Fetch more from FAISS เผื่อ filter max_distance
         fetch_k = top_k * 5
@@ -184,7 +185,7 @@ try:
         
         # ดึง embedding ของ query
         query_emb = np.array(
-            ollama.embeddings(model="nomic-embed-text:v1.5", prompt=query)["embedding"]
+            ollama.embeddings(model=read_secret("AI_EMBEDDING_MODEL"), prompt=query)["embedding"]
         )
         log(f"query_emb shape: {query_emb.shape}")
 
@@ -251,7 +252,7 @@ try:
         full_context = "\n".join(contexts)
         # prompt = f"""ข้อมูลอ้างอิง:\n{full_context}\n ให้คิดก่อนว่าเนื้อหาของคำถามนี้เกี่ยวกับพระพุทธศาสนาไหมถ้าไม่ใช่ให้ตอบว่า \"ขออภัยครับ...ผมไม่สามารถตอบคำถามนี้ได้....เนื่องจากผมถูกออกแบบมาเพื่อให้ตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น\" แต่ถ้าใช่ให้ตอบคำถามนี้ คำถาม: {query}"""
         prompt = f"""ให้คิดก่อนว่าเนื้อหาของคำถามนี้เกี่ยวกับพระพุทธศาสนาไหมถ้าไม่ใช่ให้ตอบว่า \"ขออภัยครับ...ผมไม่สามารถตอบคำถามนี้ได้....เนื่องจากผมถูกออกแบบมาเพื่อให้ตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น\" แต่ถ้าใช่ให้ตอบคำถามนี้ คำถาม: {query}"""
-        model = read_secret("AI_MODEL", "gpt-oss:20b")
+        model = read_secret("AI_MODEL")
         log(f"Asking model: \"{model}\" with prompt:\n{prompt}")
         response = ollama.chat(
             model=model,
