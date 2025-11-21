@@ -283,9 +283,10 @@ try:
             answer = br_to_newline(answer)
             return {
                 "answer": answer,
-                "references": f"อ้างอิงข้อมูลจาก\n {ref_text}",
+                "references": "ไม่มีข้อมูลอ้างอิง" if ref_text.strip() == "" else f"อ้างอิงข้อมูลจาก\n{ref_text}",
                 "duration": f'ใช้เวลา {processing_time}'
             }
+
     
     def br_to_newline(text: str) -> str:
                 """
