@@ -150,6 +150,13 @@ class TaskManager:
                     }
                     socket_emit("task", payload)
                     log(f"[TaskManager] Task {taskId} error: {data_obj['data'].get('Error', '')}")
+                    if isinstance(data_obj.get("data"), dict):
+                        data_obj["data"]["answer"] = "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
+                    else:
+                        # กรณี data_obj['data'] เป็น string ให้แปลงเป็น dict ก่อน
+                        data_obj["data"] = {"answer": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"}
+                    if chatId:
+                        await self.saveAnswer(taskId, chatId, data_obj)
             else:
                 out, err = await asyncio.get_event_loop().run_in_executor(None, proc.communicate)
                 data_obj = json.loads(out) if out.strip().startswith("{") else {"data": out}
@@ -166,6 +173,13 @@ class TaskManager:
                 }
                 socket_emit("task", payload)
                 log(f"[TaskManager] Task {taskId} error: {err}")
+                if isinstance(data_obj.get("data"), dict):
+                    data_obj["data"]["answer"] = "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
+                else:
+                    # กรณี data_obj['data'] เป็น string ให้แปลงเป็น dict ก่อน
+                    data_obj["data"] = {"answer": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"}
+                if chatId:
+                    await self.saveAnswer(taskId, chatId, data_obj)
         except Exception as e:
             out, err = await asyncio.get_event_loop().run_in_executor(None, proc.communicate)
             data_obj = json.loads(out) if out.strip().startswith("{") else {"data": out}
@@ -182,7 +196,13 @@ class TaskManager:
             }
             socket_emit("task", payload)
             log(f"[TaskManager] Task {taskId} exception: {e}")
-
+            if isinstance(data_obj.get("data"), dict):
+                data_obj["data"]["answer"] = "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
+            else:
+                # กรณี data_obj['data'] เป็น string ให้แปลงเป็น dict ก่อน
+                data_obj["data"] = {"answer": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"}
+            if chatId:
+                await self.saveAnswer(taskId, chatId, data_obj)
         finally:
             self.running_task = None
             self.processes.pop(taskId, None)
