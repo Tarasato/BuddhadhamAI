@@ -16,6 +16,8 @@ API_SERVER_PORT = 3000
 
 AI_SERVER = "127.0.0.1"
 AI_SERVER_PORT = 0000
+AI_MODEL = "gpt-oss:20b"
+AI_EMBEDDING_MODEL = "nomic-embed-text:v1.5"
 
 DEBUG = false
 DEBUG_TIME = 5

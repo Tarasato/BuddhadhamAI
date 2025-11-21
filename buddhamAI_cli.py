@@ -14,8 +14,20 @@ from numpy.linalg import norm
 from sklearn.metrics.pairwise import cosine_similarity
 from reDocuments import ensure_embeddings_up_to_date
 from debugger import format_duration, log
+from dotenv import load_dotenv
+
+# loading .env
+load_dotenv()
 
 try:
+    
+    def read_secret(secret_name, default=None):
+        secret_path = f"/run/secrets/{secret_name}"
+        if os.path.exists(secret_path):
+            with open(secret_path) as f:
+                return f.read().strip()
+        return os.getenv(secret_name, default)
+    
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
     
@@ -26,7 +38,7 @@ try:
             os.system('clear')
     
     log_file = "buddhamAI_cli.log"
-    required_models = ["gpt-oss:20b", "nomic-embed-text:v1.5"]
+    required_models = [read_secret("AI_MODEL", "gpt-oss:20b"), read_secret("AI_EMBEDDING_MODEL", "nomic-embed-text:v1.5")]
     EMB_PATH = "embeddings.npy"
     META_PATH = "metadata.pkl"
     DOCS_ALL_PATH = "documents/documentsPkl/documents_all.pkl"
@@ -239,7 +251,7 @@ try:
         full_context = "\n".join(contexts)
         # prompt = f"""ข้อมูลอ้างอิง:\n{full_context}\n ให้คิดก่อนว่าเนื้อหาของคำถามนี้เกี่ยวกับพระพุทธศาสนาไหมถ้าไม่ใช่ให้ตอบว่า \"ขออภัยครับ...ผมไม่สามารถตอบคำถามนี้ได้....เนื่องจากผมถูกออกแบบมาเพื่อให้ตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น\" แต่ถ้าใช่ให้ตอบคำถามนี้ คำถาม: {query}"""
         prompt = f"""ให้คิดก่อนว่าเนื้อหาของคำถามนี้เกี่ยวกับพระพุทธศาสนาไหมถ้าไม่ใช่ให้ตอบว่า \"ขออภัยครับ...ผมไม่สามารถตอบคำถามนี้ได้....เนื่องจากผมถูกออกแบบมาเพื่อให้ตอบคำถามเกี่ยวกับพระพุทธธรรมเท่านั้น\" แต่ถ้าใช่ให้ตอบคำถามนี้ คำถาม: {query}"""
-        model = 'gpt-oss:20b'
+        model = read_secret("AI_MODEL", "gpt-oss:20b")
         log(f"Asking model: \"{model}\" with prompt:\n{prompt}")
         response = ollama.chat(
             model=model,
