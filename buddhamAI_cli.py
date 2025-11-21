@@ -1,4 +1,5 @@
 # buddhamAI_cli.py
+import re
 import sys
 import os
 import pickle
@@ -279,12 +280,22 @@ try:
                 "duration": f'ใช้เวลา {processing_time}'
             }
         else:
+            answer = br_to_newline(answer)
             return {
                 "answer": answer,
                 "references": f"อ้างอิงข้อมูลจาก\n {ref_text}",
                 "duration": f'ใช้เวลา {processing_time}'
             }
     
+    def br_to_newline(text: str) -> str:
+                """
+                แปลง <br> หรือ <br /> ในข้อความเป็น \n
+                """
+                if not text:
+                    return ""
+                # ใช้ regex แปลง <br> หรือ <br /> เป็น newline
+                return re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+
     def read_last_embed_time():
         if not os.path.exists(STATUS_FILE):
             return "1970-01-01 00:00:00"
