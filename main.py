@@ -169,7 +169,7 @@ class TaskManager:
                     
                 payload = {
                     "taskId": taskId,
-                    "message": message
+                    "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
                 }
                 socket_emit("task", payload)
                 log(f"[TaskManager] Task {taskId} error: {err}")
@@ -192,7 +192,7 @@ class TaskManager:
                 message = str(data_obj)
             payload = {
                 "taskId": taskId,
-                "message": message
+                "message": "เกิดข้อผิดพลาดในการประมวลผลคำขอของคุณ"
             }
             socket_emit("task", payload)
             log(f"[TaskManager] Task {taskId} exception: {e}")
